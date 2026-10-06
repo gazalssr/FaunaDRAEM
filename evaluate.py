@@ -1835,9 +1835,9 @@ def run_test(
             print(
                 "[TEST seg GLOBAL hybrid] "
                 f"thr={seg_thr:.4f}  "
-                f"F1={seg_f1_global:.4f}  "
                 f"P={seg_precision_global:.4f}  "
                 f"R={seg_recall_global:.4f}  "
+                f"F1={seg_f1_global:.4f}  "
                 f"AP={seg_ap_global:.4f}  "
                 f"AUROC={seg_auc_global:.4f}"
             )
