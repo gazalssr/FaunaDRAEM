@@ -15,12 +15,12 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-INPUT_DIR = r"/DRAEM/PAPER_RESULTS/CAH/CAH_DRAEM/CAH_RESULTS_DRAEM/TEST_Results/Final_Test_thresholds_det_447_seg_65_Binary_maps"
-CSV_OUTPUT_PATH = r"/DRAEM/PAPER_RESULTS/CAH/CAH_DRAEM/CAH_RESULTS_DRAEM/CAH_Post_Processing/CAH_cah_FINAL_DRAEM//POINTS_Test_draem_overlays/Detections.csv"
-OVERLAY_OUTPUT_DIR = r"/DRAEM/PAPER_RESULTS/CAH/CAH_DRAEM/CAH_RESULTS_DRAEM/CAH_Post_Processing/CAH_cah_FINAL_DRAEM//POINTS_Test_draem_overlays/Points_DRAEM_Points_boxes"
+INPUT_DIR = r"Pth_to_Resulted_Binary_maps"
+CSV_OUTPUT_PATH = r"Path_to_Output_FauanDRAEM_Dtections"
+OVERLAY_OUTPUT_DIR = r"Path_to_OutPut_gt_FaunaDRAEM_detections_Plots"
 FILE_GLOB = "*_mask_color.png"  
 
-GT_CSV_PATH = r"/DRAEM/PAPER_DATA/CAH_allocations_PATCHES/TEST_CAH_2019_NoM/gt.csv"
+GT_CSV_PATH = r"Path_to_GT_Test_File"
 
 COLOR_MAP_THRESHOLD = 0.8
 SCORE_THR = 0.60
@@ -40,7 +40,7 @@ THIN_NARROW_MAX_PX = 2
 THIN_LONG_MIN_PX = 8
 FILL_RATIO_MIN = 0.18
 USE_HEATMAP = True
-HEATMAP_NPY_DIR = Path("/DRAEM/PAPER_RESULTS/CAH/CAH_DRAEM/Final_CAH_Inference_Results/heatmaps_npy")
+HEATMAP_NPY_DIR = Path("Path_to_Heatmaps_NPY")
 HMAP_LOW = 0.35
 
 
