@@ -510,9 +510,7 @@ class TrainDataset(Dataset):
             group
         ]
 
-        # ---------------------------------------------------------
-        # Scaling is independent from apply_aug.
-        # ---------------------------------------------------------
+
         do_scale_shared = (
             random.random()
             < self.p_scale
@@ -630,10 +628,6 @@ class TrainDataset(Dataset):
             ]
 
 
-            # -----------------------------------------------------
-            # Shared enlargement.
-            # Independent from apply_aug.
-            # -----------------------------------------------------
             if shared_scale != 1.0:
                 crop = cv2.resize(
                     crop,
