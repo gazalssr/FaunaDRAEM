@@ -5,6 +5,7 @@ import random
 import time
 from pathlib import Path
 from typing import Any
+from torch.cuda.amp import autocast, GradScaler
 import cv2
 import numpy as np
 import torch
@@ -348,25 +349,28 @@ def _save_validation_artifacts(
         )
 
 
-def _metric_from_result(
+def _detection_metric_from_result(
     metric_key: str,
     metrics: dict[str, float],
 ) -> float:
-    """Read the metric used only for early stopping."""
+    """Return the detection metric used for early stopping."""
     normalized_key = metric_key.lower()
 
     aliases = {
-        "dice": "dice",
         "f1": "f1",
         "ap": "ap",
         "auc": "auc",
         "auroc": "auc",
+        "precision": "precision",
+        "p": "precision",
+        "recall": "recall",
+        "r": "recall",
     }
 
     if normalized_key not in aliases:
         raise ValueError(
             "early_stop_metric must be one of: "
-            "dice, f1, ap, auc, auroc"
+            "f1, ap, auc, auroc, precision, p, recall, r"
         )
 
     return float(
@@ -379,7 +383,7 @@ def _metric_from_result(
 def train(
     args: Any,
 ) -> dict[str, Any]:
-    """Train DRAEM with fixed thresholds and one final checkpoint."""
+    """Train DRAEM with fixed thresholds and save best and final checkpoints."""
     model_name = str(
         getattr(
             args,
@@ -413,7 +417,7 @@ def train(
     )
 
     checkpoint_dir = Path(
-        args.checkpoint_dir
+    args.checkpoint_dir
     )
 
     checkpoint_dir.mkdir(
@@ -421,12 +425,26 @@ def train(
         exist_ok=True,
     )
 
+    checkpoint_name = getattr(
+        args,
+        "checkpoint_name",
+        "draem_final.pt",
+    )
+
     final_checkpoint_path = (
         checkpoint_dir
-        / getattr(
-            args,
-            "checkpoint_name",
-            "draem_final.pt",
+        / checkpoint_name
+    )
+
+    checkpoint_name_path = Path(
+        checkpoint_name
+    )
+
+    best_checkpoint_path = (
+        checkpoint_dir
+        / (
+            f"{checkpoint_name_path.stem}_best"
+            f"{checkpoint_name_path.suffix or '.pt'}"
         )
     )
 
@@ -441,7 +459,7 @@ def train(
         getattr(
             args,
             "max_silhouettes",
-            50,
+            80,
         )
     )
 
@@ -471,7 +489,13 @@ def train(
         transforms_mask=args.train_msk_tf,
         max_silhouettes=max_silhouettes,
 
-        apply_aug=False,
+        apply_aug=bool(
+            getattr(
+                args,
+                "apply_augmentations",
+                False,
+            )
+        ),
 
         cache_silhouettes=True,
 
@@ -693,7 +717,22 @@ def train(
             args.weight_decay
         ),
     )
+    use_amp = bool(
+        getattr(
+            args,
+            "use_amp",
+            False,
+        )
+    )
 
+    scaler = GradScaler(
+        enabled=use_amp,
+    )
+
+    print(
+        f"[precision] training AMP={'ON' if use_amp else 'OFF'}, "
+        "validation FP32"
+    )
     scheduler = _build_scheduler(
         optimizer,
         total_epochs=int(
@@ -735,12 +774,12 @@ def train(
     )
 
     metric_key = str(
-        getattr(
-            args,
-            "early_stop_metric",
-            "ap",
-        )
-    ).lower()
+    getattr(
+        args,
+        "early_stop_metric",
+        "ap",
+    )
+).lower()
 
     monitor_after = int(
         getattr(
@@ -767,6 +806,9 @@ def train(
     )
 
     best_val = -math.inf
+    best_epoch = 0
+
+    best_det_metric = -math.inf
     no_improvement_count = 0
     completed_epoch = 0
 
@@ -972,74 +1014,84 @@ def train(
                 set_to_none=True
             )
 
-            reconstructed = rec(
-                synth
-            )
-
-            seg_input = torch.cat(
-                [
-                    reconstructed,
-                    synth,
-                ],
-                dim=1,
-            ).contiguous()
-
-            (
-                seg_logits,
-                ssp_loss,
-                _,
-                tau_logits,
-            ) = seg(
-                seg_input
-            )
-
-            seg_probabilities = torch.softmax(
-                seg_logits,
-                dim=1,
-            )
-
-            segmentation_loss = (
-                reconstruction_loss(
-                    reconstructed.float(),
-                    clean.float(),
-                )
-                + ssim_loss(
-                    reconstructed.float(),
-                    clean.float(),
-                )
-                + focal_loss(
-                    seg_probabilities.float(),
-                    masks.float(),
-                )
-                + 0.1 * ssp_loss.float()
-            )
-
-            seg_scalar = segmentation_loss.mean()
-
-            if float(args.det_loss_w) > 0:
-                tau_scalar = detection_loss(
-                    tau_logits.float(),
-                    labels.float(),
-                ).mean()
-
-                total_loss = (
-                    seg_scalar
-                    + float(args.det_loss_w)
-                    * tau_scalar
-                )
-            else:
-                tau_scalar = torch.zeros(
-                    (),
-                    dtype=seg_scalar.dtype,
-                    device=seg_scalar.device,
+            with autocast(
+                enabled=use_amp,
+            ):
+                reconstructed = rec(
+                    synth
                 )
 
-                total_loss = seg_scalar
+                seg_input = torch.cat(
+                    [
+                        reconstructed,
+                        synth,
+                    ],
+                    dim=1,
+                ).contiguous()
+
+                (
+                    seg_logits,
+                    ssp_loss,
+                    _,
+                    tau_logits,
+                ) = seg(
+                    seg_input
+                )
+
+                seg_probabilities = torch.softmax(
+                    seg_logits,
+                    dim=1,
+                )
+
+                segmentation_loss = (
+                    reconstruction_loss(
+                        reconstructed.float(),
+                        clean.float(),
+                    )
+                    + ssim_loss(
+                        reconstructed.float(),
+                        clean.float(),
+                    )
+                    + focal_loss(
+                        seg_probabilities.float(),
+                        masks.float(),
+                    )
+                    + 0.1 * ssp_loss.float()
+                )
+
+                seg_scalar = segmentation_loss.mean()
+
+                if float(args.det_loss_w) > 0:
+                    tau_scalar = detection_loss(
+                        tau_logits.float(),
+                        labels.float(),
+                    ).mean()
+
+                    total_loss = (
+                        seg_scalar
+                        + float(args.det_loss_w)
+                        * tau_scalar
+                    )
+                else:
+                    tau_scalar = torch.zeros(
+                        (),
+                        dtype=seg_scalar.dtype,
+                        device=seg_scalar.device,
+                    )
+
+                    total_loss = seg_scalar
 
             forward_end = time.perf_counter()
 
-            total_loss.backward()
-            optimizer.step()
+            scaler.scale(
+                total_loss
+            ).backward()
+
+            scaler.step(
+                optimizer
+            )
+
+            scaler.update()
 
             backward_end = time.perf_counter()
 
@@ -1234,7 +1286,8 @@ def train(
                     paths,
                     seg_thr_fixed,
                 )
-
+                
+        det_metrics = None
         if (
             det_label_parts
             and det_prob_parts
@@ -1358,46 +1411,72 @@ def train(
 
             print(
                 f"[VAL seg @fixed {seg_thr_fixed:.4f}] "
-                f"Dice={current_seg_metrics['dice']:.4f} "
+                f"P={current_seg_metrics['precision']:.4f} "
+                f"R={current_seg_metrics['recall']:.4f} "
                 f"F1={current_seg_metrics['f1']:.4f} "
                 f"AP={current_seg_metrics['ap']:.4f} "
                 f"AUROC={current_seg_metrics['auc']:.4f}"
             )
 
-        if (
-            current_seg_metrics
-            is not None
-            and epoch_number
-            >= monitor_after
-            and patience > 0
-        ):
-            monitor_value = (
-                _metric_from_result(
-                    metric_key,
-                    current_seg_metrics,
-                )
-            )
-
-            print(
-                f"[monitor] "
-                f"{metric_key}="
-                f"{monitor_value:.4f} "
-                f"(best={best_val:.4f})"
+        # Best checkpoint is selected only by segmentation AP.
+        if current_seg_metrics is not None:
+            current_seg_ap = float(
+                current_seg_metrics["ap"]
             )
 
             if (
-                math.isfinite(
-                    monitor_value
-                )
-                and monitor_value
-                > best_val
-                + min_delta
+                math.isfinite(current_seg_ap)
+                and current_seg_ap > best_val
             ):
-                best_val = (
-                    monitor_value
+                best_val = current_seg_ap
+                best_epoch = epoch_number
+
+                _save_draem_ckpt(
+                    rec,
+                    seg,
+                    best_checkpoint_path,
+                    args,
+                    epoch_number,
                 )
 
+                print(
+                    f"[checkpoint] NEW BEST segmentation AP: "
+                    f"epoch={epoch_number}, "
+                    f"AP={best_val:.4f}"
+                )
+
+                print(
+                    f"[checkpoint] path: "
+                    f"{best_checkpoint_path}"
+                )
+
+
+        # Early stopping is controlled independently by detection.
+        if (
+            det_metrics is not None
+            and epoch_number >= monitor_after
+            and patience > 0
+        ):
+            monitor_value = _detection_metric_from_result(
+                metric_key,
+                det_metrics,
+            )
+
+            print(
+                f"[early-stop monitor][epoch {epoch_number}] "
+                f"det_{metric_key}={monitor_value:.4f} "
+                f"(best={best_det_metric:.4f}, "
+                f"patience={no_improvement_count}/{patience})"
+            )
+
+            if (
+                math.isfinite(monitor_value)
+                and monitor_value
+                > best_det_metric + min_delta
+            ):
+                best_det_metric = monitor_value
                 no_improvement_count = 0
+
             else:
                 no_improvement_count += 1
 
@@ -1407,7 +1486,7 @@ def train(
                 ):
                     print(
                         "[early-stop] patience exhausted "
-                        "on fresh segmentation evaluations"
+                        f"for validation detection {metric_key}"
                     )
 
                     break
@@ -1459,15 +1538,20 @@ def train(
         f"{completed_epoch} epoch(s). "
         "No automatic threshold search was performed."
     )
-
+    selected_checkpoint_path = (
+    best_checkpoint_path
+    if best_epoch > 0
+    else final_checkpoint_path
+)
     return {
-        "val_images": torch.empty(0),
-        "pred_masks": torch.empty(0),
-        "image_paths": [],
-        "best_ckpt": str(
-            final_checkpoint_path
-        ),
-        "best_val": best_val,
-        "seg_dice": seg_dice_hist,
-        "det_f1": det_f1_hist,
-    }
+    "val_images": torch.empty(0),
+    "pred_masks": torch.empty(0),
+    "image_paths": [],
+    "best_ckpt": str(
+        selected_checkpoint_path
+    ),
+    "best_val": best_val,
+    "best_epoch": best_epoch,
+    "seg_dice": seg_dice_hist,
+    "det_f1": det_f1_hist,
+}
