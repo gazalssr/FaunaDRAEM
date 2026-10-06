@@ -91,7 +91,7 @@ def build_args(use_cli: bool = False) -> Namespace:
         parser.add_argument(
             "--padim_nf_epochs",
             type=int,
-            default=10,
+            default=1,
         )
         try:
             from argparse import BooleanOptionalAction
@@ -124,33 +124,34 @@ def build_args(use_cli: bool = False) -> Namespace:
         return parser.parse_args()
 
     return Namespace(
-        # Model selection ("draem", "padim", "padim_nf")
+        # Model selection (options: "draem", "padim", "padim_nf")
         model="draem",
         apply_augmentations=False,
         # Fixed Thresholds
-        segmentation_threshold=0.50,
-        detection_threshold=0.50,
+        segmentation_threshold=0.43,
+        detection_threshold=0.40,
 
         lr=1e-4,
-        epochs=1,
+        epochs=150,
         batch_size=16,
         num_workers=4,
+        use_amp=True,
         det_loss_w=0.1,
         weight_decay=1e-4,
         warmup_epochs=15,
 
-        early_stop_metric="ap",
-        monitor_after=10,
-        patience=40,
+        early_stop_metric="ap", # options: "ap", "f1", "precision", "recall", "auroc"
+        monitor_after=15,
+        patience=20,
         min_delta=0.001,
         seg_eval_stride=2,
 
-        checkpoint_dir="/DRAEM/Publish_res/checkpoints_New",
-        checkpoint_name="draem_final.pt",
+        checkpoint_dir="Root_Path_to_Checkpoint_Folder",
+        checkpoint_name="Checkpoint_File_Name",
 
 
-        plot_dir="/DRAEM/Publish_res/plots_New",
-        seg_plot_dir="/DRAEM/Publish_res/plots_New/segmentation",
+        plot_dir="/Root path_to_plots",
+        seg_plot_dir="/Pth_to_segmentation_Results",
 
         # PaDiM-MAF settings
         
@@ -162,48 +163,41 @@ def build_args(use_cli: bool = False) -> Namespace:
 
         # Silhouette bank
 
-        sil_root="/DRAEM/Silhouette_Bank",
-        mask_root="/DRAEM/Silhouette_Bank",
+        sil_root="Path_to_Silhouette_Bank_Root_Folder",
+        mask_root="Path_to_Silhouette_Bank_Root_Folder",
 
         # Training data: empty/normal patches only
 
         img_root=(
-            "/DRAEM/Paper_3_DATASET/Patches_May_31/"
-            "Patches_May_31_NOM/AD_Allocation/Train_Empty"
+            "Path_to_Train_Images_Empty"
         ),
 
 
         csv_file_dir=(
-            "/DRAEM/DATASETS/Multi_Herd_data/"
-            "Multi_Herd_allocation/Multi_Herd_Patches/TRAIN_gt.csv"
+            "Path_to_gt_files_of_the_SAM_pathes"
         ),
 
         # Validation data
 
         imag_non_empty_dir=(
-            "/DRAEM/Paper_3_DATASET/Patches_May_31/"
-            "Patches_May_31_NOM/AD_Allocation/val_NOM"
+            "Path_to_Validation_patches"
         ),
 
         masks_path=(
-            "/DRAEM/Paper_3_DATASET/Patches_May_31/"
-            "Patches_May_31_NOM/AD_Allocation/"
-            "Val_test_masks/val"
+            "Path_to_validation_masks"
+            
         ),
 
         binary_dir=(
-            "/DRAEM/May_31_data_RESULTS/"
-            "Validation_Results_2/binarymaps"
+            "Path_to_Validation_Results_Dir_to_save_validation_Binary_Results"
         ),
 
         heatmap_dir=(
-            "/DRAEM/May_31_data_RESULTS/"
-            "Validation_Results_2/heatmaps"
+            "Path_to_Validation_Results_Dir_to_save_Validation_Heatmap_Results"
         ),
 
         anomalymap_dir=(
-            "/DRAEM/May_31_data_RESULTS/"
-            "Validation_Results_2/anomalyaps"
+            "Path_to_Validation_Results_Dir_to_save_Validation_AnomalyMap_Results"
         ),
 
         save_val_artifacts=False,
@@ -211,14 +205,11 @@ def build_args(use_cli: bool = False) -> Namespace:
         # Test data
 
         test2_image_dir=(
-            "/DRAEM/Paper_3_DATASET/Patches_May_31/"
-            "Patches_May_31_NOM/AD_Allocation/test_NOM"
+            "Path_to_Test_patches"
         ),
 
         test2_mask_dir=(
-            "/DRAEM/Paper_3_DATASET/Patches_May_31/"
-            "Patches_May_31_NOM/AD_Allocation/"
-            "Val_test_masks/test"
+            "Path_to_Test_Masks"
         ),
 
         # SAM model download and checkpoint path
@@ -273,26 +264,26 @@ def main() -> None:
     checkpoint_path = train_output["best_ckpt"]
 
     print(
-        "[checkpoint] using single final checkpoint: "
-        f"{checkpoint_path}"
-    )
+    "[checkpoint] using best validation checkpoint: "
+    f"{checkpoint_path}"
+)
 
     print("Starting testing...")
 
     test2_heatmap_dir = (
-        "/DRAEM/Publish_res/heatmaps"
+        "Path_to_Test_Heatmap_Results"
     )
 
     test2_anomaly_dir = (
-        "/DRAEM/Publish_res/anomalymaps"
+        "Path_to_Test_AnomalyMap_Results"
     )
 
     test2_binary_dir = (
-        "/DRAEM/Publish_res/binarymaps"
+        "Path_to_Test_BinaryMap_Results"
     )
 
     output_pdf_path = (
-        "/DRAEM/Publish_res/test_metrics_2.pdf"
+        "Path_to_Test_Metrics_Pdf"
     )
 
     test2_metrics = run_test(
