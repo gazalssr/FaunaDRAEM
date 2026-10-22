@@ -618,10 +618,10 @@ def train(
         **loader_kwargs,
     )
 
-    steps_per_epoch = max(
-    1,
-    len(ds_clean) // batch_total,
-    )
+    steps_per_epoch = min(
+    len(dl_clean),
+    len(dl_anom),
+)
 
     print(
         f"[training] dataset={len(ds_clean)}, "
