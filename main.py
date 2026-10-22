@@ -142,6 +142,7 @@ def build_args(use_cli: bool = False) -> Namespace:
 
         early_stop_metric="ap", # options: "ap", "f1", "precision", "recall", "auroc"
         monitor_after=15,
+        checkpoint_after=15,
         patience=20,
         min_delta=0.001,
         seg_eval_stride=2,
