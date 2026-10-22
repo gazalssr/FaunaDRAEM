@@ -788,7 +788,13 @@ def train(
             1,
         )
     )
-
+    checkpoint_after = int(
+    getattr(
+        args,
+        "checkpoint_after",
+        1,
+    )
+)
     patience = int(
         getattr(
             args,
@@ -1419,7 +1425,10 @@ def train(
             )
 
         # Best checkpoint is selected only by segmentation AP.
-        if current_seg_metrics is not None:
+        if (
+    current_seg_metrics is not None
+    and epoch_number >= checkpoint_after
+            ):
             current_seg_ap = float(
                 current_seg_metrics["ap"]
             )
