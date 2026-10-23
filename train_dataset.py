@@ -75,8 +75,8 @@ class TrainDataset(Dataset):
         self.p_photo = float(p_photo)
 
         # Scaling stays independent from apply_aug.
-        self.p_scale = 0.40
-        self.scale_range = (1.05, 1.30)
+        self.p_scale = 0.30
+        self.scale_range = (0.95, 1.15)
 
         self._aug_geo_count = 0
         self._aug_photo_count = 0
