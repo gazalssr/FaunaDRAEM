@@ -142,7 +142,8 @@ def _build_scheduler(
     total_epochs: int,
     warmup_epochs: int,
 ) -> LambdaLR:
-    """Warm up once, then apply the 80% and 90% LR decays."""
+    """Linear warmup followed by cosine decay."""
+
     if total_epochs < 1:
         raise ValueError("total_epochs must be >= 1")
 
@@ -151,18 +152,9 @@ def _build_scheduler(
         min(int(warmup_epochs), total_epochs),
     )
 
-    milestone_1 = max(
-        1,
-        int(0.8 * total_epochs),
-    )
-
-    milestone_2 = max(
-        milestone_1 + 1,
-        int(0.9 * total_epochs),
-    )
-
-    milestone_2 = min(
-        milestone_2,
+    min_factor = 0.10
+    decay_end_epoch = min(
+        60,
         total_epochs,
     )
 
@@ -173,15 +165,40 @@ def _build_scheduler(
             warmup_epochs > 0
             and epoch_number <= warmup_epochs
         ):
-            return epoch_number / float(warmup_epochs)
+            return (
+                epoch_number
+                / float(warmup_epochs)
+            )
 
-        if epoch_number >= milestone_2:
-            return 0.04
+        decay_epochs = max(
+            1,
+            decay_end_epoch - warmup_epochs,
+        )
 
-        if epoch_number >= milestone_1:
-            return 0.20
+        progress = (
+            epoch_number - warmup_epochs
+        ) / float(decay_epochs)
 
-        return 1.0
+        progress = min(
+            max(progress, 0.0),
+            1.0,
+        )
+
+        cosine_factor = (
+            0.5
+            * (
+                1.0
+                + math.cos(
+                    math.pi * progress
+                )
+            )
+        )
+
+        return (
+            min_factor
+            + (1.0 - min_factor)
+            * cosine_factor
+        )
 
     return LambdaLR(
         optimizer,
@@ -622,7 +639,6 @@ def train(
     len(dl_clean),
     len(dl_anom),
 )
-
     print(
         f"[training] dataset={len(ds_clean)}, "
         f"batch={batch_total} "
@@ -788,6 +804,7 @@ def train(
             1,
         )
     )
+
     checkpoint_after = int(
     getattr(
         args,
@@ -1075,8 +1092,7 @@ def train(
 
                     total_loss = (
                         seg_scalar
-                        + float(args.det_loss_w)
-                        * tau_scalar
+                        + float(args.det_loss_w) * tau_scalar
                     )
                 else:
                     tau_scalar = torch.zeros(
@@ -1087,17 +1103,36 @@ def train(
 
                     total_loss = seg_scalar
 
-            forward_end = time.perf_counter()
+                forward_end = time.perf_counter()
 
-            scaler.scale(
-                total_loss
-            ).backward()
+                if not torch.isfinite(total_loss):
+                    raise RuntimeError(
+                        f"Non-finite training loss detected: "
+                        f"total={total_loss.item()}, "
+                        f"seg={seg_scalar.item()}, "
+                        f"det={tau_scalar.item()}"
+                    )
 
-            scaler.step(
-                optimizer
-            )
+                scaler.scale(
+                    total_loss
+                ).backward()
 
-            scaler.update()
+                scaler.unscale_(
+                    optimizer
+                )
+
+                torch.nn.utils.clip_grad_norm_(
+                    list(rec.parameters())
+                    + list(seg.parameters()),
+                    max_norm=5.0,
+                )
+
+                scaler.step(
+                    optimizer
+                )
+
+                scaler.update()
+
 
             backward_end = time.perf_counter()
 
@@ -1317,7 +1352,25 @@ def train(
                     np.float32
                 )
             )
+            pos_scores = det_probs_np[
+                det_labels_np == 1
+            ]
 
+            neg_scores = det_probs_np[
+                det_labels_np == 0
+            ]
+
+            # print(
+            #     "[VAL det scores] "
+            #     f"POS mean={pos_scores.mean():.4f} "
+            #     f"med={np.median(pos_scores):.4f} "
+            #     f"p10={np.percentile(pos_scores, 10):.4f} "
+            #     f"p90={np.percentile(pos_scores, 90):.4f} | "
+            #     f"NEG mean={neg_scores.mean():.4f} "
+            #     f"med={np.median(neg_scores):.4f} "
+            #     f"p10={np.percentile(neg_scores, 10):.4f} "
+            #     f"p90={np.percentile(neg_scores, 90):.4f}"
+            # )
             det_metrics = (
                 evaluate_detection_metrics(
                     det_labels_np,
@@ -1428,7 +1481,7 @@ def train(
         if (
     current_seg_metrics is not None
     and epoch_number >= checkpoint_after
-            ):
+):
             current_seg_ap = float(
                 current_seg_metrics["ap"]
             )
