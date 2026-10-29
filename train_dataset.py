@@ -55,15 +55,14 @@ class TrainDataset(Dataset):
         max_silhouettes: int = 80,
         epoch: int = -1,
         batch_size: int = 8,
-        # augmentations other than scaling are optional.
         apply_aug: bool = False,
         is_last_epoch: bool = False,
         save_synthetic: bool = False,
         mode: str = "both",
         p_clean: float = 0.5,
         p_geo: float = 0.5,
-        p_flip: float = 0.3,
-        p_photo: float = 0.2,
+        p_flip: float = 0.5,
+        p_photo: float = 0.3,
         cache_silhouettes: bool = True,
     ):
         super().__init__()
@@ -227,28 +226,27 @@ class TrainDataset(Dataset):
                 exist_ok=True,
             )
 
-        # print(
-        #     "[TrainDataset] scaling active independently: "
-        #     f"p_scale={self.p_scale}, "
-        #     f"range={self.scale_range}"
-        # )
+
 
         if self.apply_aug:
-            # print(
-            #     "[TrainDataset] optional augmentations ENABLED: "
-            #     f"p_geo={self.p_geo}, "
-            #     f"p_flip={self.p_flip}, "
-            #     f"p_photo={self.p_photo}"
-            # )
-
-            self.geo_seq = iaa.Sequential(
-                [
-                    iaa.Sometimes(
-                        self.p_flip,
-                        iaa.Fliplr(1.0),
-                    ),
-                ]
+            print(
+                f"[TrainDataset] augmentations ENABLED "
+                f"(mode={self.mode})"
             )
+    
+            self.geo_seq = iaa.Sequential(
+    [
+        iaa.Affine(
+            rotate=(-15, 15),
+  
+        ),
+        iaa.Sometimes(
+            self.p_flip,
+            iaa.Fliplr(1.0),
+        ),
+    ],
+    random_order=True,
+)
 
             # Photometric augmentation is applied only to RGB.
             self.photo_seq = iaa.Sequential(
@@ -264,7 +262,7 @@ class TrainDataset(Dataset):
             )
         else:
             print(
-                "[TrainDataset] optional augmentations DISABLED"
+                "[TrainDataset] augmentations DISABLED"
             )
 
             # No augmentation objects are used in __getitem__.
@@ -281,7 +279,7 @@ class TrainDataset(Dataset):
         self.debug_epoch_only = epoch
 
     def _sample_scale(self) -> float:
-        """Sample enlargement without shrinking."""
+        """Sample mild scale variation"""
         low, high = self.scale_range
 
         return float(
@@ -510,7 +508,9 @@ class TrainDataset(Dataset):
             group
         ]
 
-
+        # ---------------------------------------------------------
+        # Scaling is independent from apply_aug.
+        # ---------------------------------------------------------
         do_scale_shared = (
             random.random()
             < self.p_scale
