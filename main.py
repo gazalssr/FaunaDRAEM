@@ -131,9 +131,9 @@ def build_args(use_cli: bool = False) -> Namespace:
         segmentation_threshold=0.43,
         detection_threshold=0.40,
 
-        lr=1e-4,
+        lr=1e-4, # Reduce the lr to a lower amount if augmentations casue overfitting (e.g. 5e-5)
         epochs=150,
-        batch_size=16,
+        batch_size=32,
         num_workers=4,
         use_amp=True,
         det_loss_w=0.1,
