@@ -1360,17 +1360,7 @@ def train(
                 det_labels_np == 0
             ]
 
-            # print(
-            #     "[VAL det scores] "
-            #     f"POS mean={pos_scores.mean():.4f} "
-            #     f"med={np.median(pos_scores):.4f} "
-            #     f"p10={np.percentile(pos_scores, 10):.4f} "
-            #     f"p90={np.percentile(pos_scores, 90):.4f} | "
-            #     f"NEG mean={neg_scores.mean():.4f} "
-            #     f"med={np.median(neg_scores):.4f} "
-            #     f"p10={np.percentile(neg_scores, 10):.4f} "
-            #     f"p90={np.percentile(neg_scores, 90):.4f}"
-            # )
+
             det_metrics = (
                 evaluate_detection_metrics(
                     det_labels_np,
