@@ -213,8 +213,7 @@ class TrainDataset(Dataset):
         self.debug_epoch_only = None
 
         self.dbg_root = Path(
-            "/DRAEM/Paper_3_RESULTS/"
-            "Synthetic_patches_3"
+            "Path_to_synthetic_patch_samples_dir"
         )
 
         if (
