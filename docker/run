@@ -19,8 +19,8 @@ Run a console in a docker container with all prerequisites installed.\n"
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
     docker run --rm -it --gpus all \
         --ipc=host \
-        -v /home/serg3401/DEV/DRAEM/DATASETS:/DRAEM/DATASETS \
-        -v /home/serg3401/DEV/DRAEM:/DRAEM \
+        -v /home/ \
+        -v /home/ \
         -p 8888:8888 \
         --entrypoint /bin/bash \
         draem_image:local
