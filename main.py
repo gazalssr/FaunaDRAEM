@@ -126,7 +126,7 @@ def build_args(use_cli: bool = False) -> Namespace:
     return Namespace(
         # Model selection (options: "draem", "padim", "padim_nf")
         model="draem",
-        apply_augmentations=False,
+        apply_augmentations=True,
         # Fixed Thresholds
         segmentation_threshold=0.43,
         detection_threshold=0.40,
