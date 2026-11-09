@@ -60,7 +60,7 @@ class TrainDataset(Dataset):
         save_synthetic: bool = False,
         mode: str = "both",
         p_clean: float = 0.5,
-        p_geo: float = 0.5,
+        p_geo: float = 0.6,
         p_flip: float = 0.5,
         p_photo: float = 0.3,
         cache_silhouettes: bool = True,
@@ -74,8 +74,8 @@ class TrainDataset(Dataset):
         self.p_photo = float(p_photo)
 
         # Scaling stays independent from apply_aug.
-        self.p_scale = 0.30
-        self.scale_range = (0.95, 1.15)
+        self.p_scale = 0.40
+        self.scale_range = (0.80, 1.20)
 
         self._aug_geo_count = 0
         self._aug_photo_count = 0
@@ -236,7 +236,7 @@ class TrainDataset(Dataset):
             self.geo_seq = iaa.Sequential(
     [
         iaa.Affine(
-            rotate=(-15, 15),
+            rotate=(-25, 25),
   
         ),
         iaa.Sometimes(
