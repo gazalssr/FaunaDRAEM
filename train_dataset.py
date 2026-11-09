@@ -63,8 +63,10 @@ class TrainDataset(Dataset):
         p_geo: float = 0.6,
         p_flip: float = 0.5,
         p_photo: float = 0.3,
+        p_bg_photo: float = 0.30,
         cache_silhouettes: bool = True,
     ):
+        
         super().__init__()
 
         self.apply_aug = bool(apply_aug)
@@ -72,7 +74,19 @@ class TrainDataset(Dataset):
         self.p_geo = float(p_geo)
         self.p_flip = float(p_flip)
         self.p_photo = float(p_photo)
-
+        self.p_bg_photo = float(p_bg_photo)
+        self.bg_photo_seq = iaa.Sequential(
+            [
+                iaa.MultiplyAndAddToBrightness(
+                    mul=(0.80, 1.20),
+                    add=(-20, 20),
+                ),
+                iaa.GammaContrast(
+                    (0.90, 1.10)
+                ),
+            ],
+            random_order=True,
+        )
         # Scaling stays independent from apply_aug.
         self.p_scale = 0.40
         self.scale_range = (0.80, 1.20)
@@ -439,7 +453,10 @@ class TrainDataset(Dataset):
             background_bgr,
             cv2.COLOR_BGR2RGB,
         )
-
+        if random.random() < self.p_bg_photo:
+            background_rgb = self.bg_photo_seq(
+                image=background_rgb
+            )
         if self.mode == "clean":
             make_empty = True
         elif self.mode == "anom":
