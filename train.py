@@ -30,9 +30,7 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
-
 cv2.setNumThreads(0)
-
 torch.backends.cudnn.benchmark = False
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
@@ -205,6 +203,55 @@ def _build_scheduler(
         lr_lambda=lr_factor,
     )
 
+def _append_positive_patch_pixels(
+    gt_masks: torch.Tensor,
+    prob_map: torch.Tensor,
+    y_true_parts: list[np.ndarray],
+    y_score_parts: list[np.ndarray],
+) -> None:
+    """Collect all pixels only from patches containing GT positives."""
+    positives = gt_masks > 0.5
+
+    for batch_index in range(gt_masks.size(0)):
+        positive_mask = positives[
+            batch_index,
+            0,
+        ]
+
+        if not bool(
+            positive_mask.any().item()
+        ):
+            continue
+
+        y_true = (
+            positive_mask
+            .detach()
+            .cpu()
+            .numpy()
+            .astype(np.uint8)
+            .ravel()
+        )
+
+        y_score = (
+            prob_map[
+                batch_index,
+                0,
+            ]
+            .detach()
+            .float()
+            .cpu()
+            .numpy()
+            .astype(np.float32)
+            .ravel()
+        )
+
+        y_true_parts.append(
+            y_true
+        )
+
+        y_score_parts.append(
+            y_score
+        )
 
 def _append_hybrid_pixels(
     gt_masks: torch.Tensor,
@@ -366,11 +413,11 @@ def _save_validation_artifacts(
         )
 
 
-def _detection_metric_from_result(
+def _metric_from_result(
     metric_key: str,
     metrics: dict[str, float],
 ) -> float:
-    """Return the detection metric used for early stopping."""
+    """Return the requested validation metric."""
     normalized_key = metric_key.lower()
 
     aliases = {
@@ -831,7 +878,7 @@ def train(
     best_val = -math.inf
     best_epoch = 0
 
-    best_det_metric = -math.inf
+    best_positive_metric = -math.inf
     no_improvement_count = 0
     completed_epoch = 0
 
@@ -1223,13 +1270,23 @@ def train(
             torch.Tensor
         ] = []
 
-        y_true_parts: list[
+
+        hybrid_y_true_parts: list[
             np.ndarray
         ] = []
 
-        y_score_parts: list[
+        hybrid_y_score_parts: list[
             np.ndarray
         ] = []
+
+        positive_y_true_parts: list[
+            np.ndarray
+        ] = []
+
+        positive_y_score_parts: list[
+            np.ndarray
+        ] = []
+
 
         with torch.no_grad():
             validation_bar = tqdm(
@@ -1311,13 +1368,19 @@ def train(
                     .cpu()
                 )
 
-
                 if do_seg_eval:
                     _append_hybrid_pixels(
                         gt_masks,
                         prob_map,
-                        y_true_parts,
-                        y_score_parts,
+                        hybrid_y_true_parts,
+                        hybrid_y_score_parts,
+                    )
+
+                    _append_positive_patch_pixels(
+                        gt_masks,
+                        prob_map,
+                        positive_y_true_parts,
+                        positive_y_score_parts,
                     )
 
                 _save_validation_artifacts(
@@ -1394,38 +1457,43 @@ def train(
                 f"R={det_metrics['recall']:.4f}"
             )
 
-        current_seg_metrics: (
+        current_positive_seg_metrics: (
+            dict[str, float]
+            | None
+        ) = None
+
+        current_hybrid_seg_metrics: (
             dict[str, float]
             | None
         ) = None
 
         if (
             do_seg_eval
-            and y_true_parts
-            and y_score_parts
+            and positive_y_true_parts
+            and positive_y_score_parts
         ):
-            y_true_all = (
+            positive_y_true_all = (
                 np.concatenate(
-                    y_true_parts
+                    positive_y_true_parts
                 )
                 .astype(
                     np.uint8
                 )
             )
 
-            y_score_all = (
+            positive_y_score_all = (
                 np.concatenate(
-                    y_score_parts
+                    positive_y_score_parts
                 )
                 .astype(
                     np.float32
                 )
             )
 
-            current_seg_metrics = (
+            current_positive_seg_metrics = (
                 compute_global_seg_metrics(
-                    y_true_all,
-                    y_score_all,
+                    positive_y_true_all,
+                    positive_y_score_all,
                     seg_thr_fixed,
                 )
             )
@@ -1435,53 +1503,105 @@ def train(
             )
 
             seg_dice_hist.append(
-                current_seg_metrics[
+                current_positive_seg_metrics[
                     "dice"
                 ]
             )
 
             seg_f1_hist.append(
-                current_seg_metrics[
+                current_positive_seg_metrics[
                     "f1"
                 ]
             )
 
             seg_ap_hist.append(
-                current_seg_metrics[
+                current_positive_seg_metrics[
                     "ap"
                 ]
             )
 
             seg_auc_hist.append(
-                current_seg_metrics[
+                current_positive_seg_metrics[
                     "auc"
                 ]
             )
 
             print(
-                f"[VAL seg @fixed {seg_thr_fixed:.4f}] "
-                f"P={current_seg_metrics['precision']:.4f} "
-                f"R={current_seg_metrics['recall']:.4f} "
-                f"F1={current_seg_metrics['f1']:.4f} "
-                f"AP={current_seg_metrics['ap']:.4f} "
-                f"AUROC={current_seg_metrics['auc']:.4f}"
+                f"[VAL seg @fixed "
+                f"{seg_thr_fixed:.4f}] "
+                f"P={current_positive_seg_metrics['precision']:.4f} "
+                f"R={current_positive_seg_metrics['recall']:.4f} "
+                f"F1={current_positive_seg_metrics['f1']:.4f} "
+                f"AP={current_positive_seg_metrics['ap']:.4f} "
+                f"AUROC={current_positive_seg_metrics['auc']:.4f}"
             )
 
-        # Best checkpoint is selected only by segmentation AP.
+
         if (
-    current_seg_metrics is not None
-    and epoch_number >= checkpoint_after
-):
-            current_seg_ap = float(
-                current_seg_metrics["ap"]
+            do_seg_eval
+            and hybrid_y_true_parts
+            and hybrid_y_score_parts
+        ):
+            hybrid_y_true_all = (
+                np.concatenate(
+                    hybrid_y_true_parts
+                )
+                .astype(
+                    np.uint8
+                )
+            )
+
+            hybrid_y_score_all = (
+                np.concatenate(
+                    hybrid_y_score_parts
+                )
+                .astype(
+                    np.float32
+                )
+            )
+
+            current_hybrid_seg_metrics = (
+                compute_global_seg_metrics(
+                    hybrid_y_true_all,
+                    hybrid_y_score_all,
+                    seg_thr_fixed,
+                )
+            )
+
+            print(
+                f"[VAL seg GLOBAL HYBRID @fixed "
+                f"{seg_thr_fixed:.4f}] "
+                f"P={current_hybrid_seg_metrics['precision']:.4f} "
+                f"R={current_hybrid_seg_metrics['recall']:.4f} "
+                f"F1={current_hybrid_seg_metrics['f1']:.4f} "
+                f"AP={current_hybrid_seg_metrics['ap']:.4f} "
+                f"AUROC={current_hybrid_seg_metrics['auc']:.4f}"
+            )
+        
+        if (
+            current_hybrid_seg_metrics is not None
+            and epoch_number >= checkpoint_after
+        ):
+            current_hybrid_ap = float(
+                current_hybrid_seg_metrics[
+                    "ap"
+                ]
             )
 
             if (
-                math.isfinite(current_seg_ap)
-                and current_seg_ap > best_val
+                math.isfinite(
+                    current_hybrid_ap
+                )
+                and current_hybrid_ap
+                > best_val
             ):
-                best_val = current_seg_ap
-                best_epoch = epoch_number
+                best_val = (
+                    current_hybrid_ap
+                )
+
+                best_epoch = (
+                    epoch_number
+                )
 
                 _save_draem_ckpt(
                     rec,
@@ -1492,7 +1612,8 @@ def train(
                 )
 
                 print(
-                    f"[checkpoint] NEW BEST segmentation AP: "
+                    "[checkpoint] NEW BEST "
+                    "GLOBAL HYBRID segmentation AP: "
                     f"epoch={epoch_number}, "
                     f"AP={best_val:.4f}"
                 )
@@ -1501,32 +1622,45 @@ def train(
                     f"[checkpoint] path: "
                     f"{best_checkpoint_path}"
                 )
-
-
-        # Early stopping is controlled independently by detection.
+        
         if (
-            det_metrics is not None
-            and epoch_number >= monitor_after
+            current_positive_seg_metrics
+            is not None
+            and epoch_number
+            >= monitor_after
             and patience > 0
         ):
-            monitor_value = _detection_metric_from_result(
-                metric_key,
-                det_metrics,
+            monitor_value = (
+                _metric_from_result(
+                    metric_key,
+                    current_positive_seg_metrics,
+                )
             )
 
             print(
-                f"[early-stop monitor][epoch {epoch_number}] "
-                f"det_{metric_key}={monitor_value:.4f} "
-                f"(best={best_det_metric:.4f}, "
-                f"patience={no_improvement_count}/{patience})"
+                f"[early-stop monitor]"
+                f"[epoch {epoch_number}] "
+                f"positive_seg_{metric_key}="
+                f"{monitor_value:.4f} "
+                f"(best="
+                f"{best_positive_metric:.4f}, "
+                f"patience="
+                f"{no_improvement_count}/"
+                f"{patience})"
             )
 
             if (
-                math.isfinite(monitor_value)
+                math.isfinite(
+                    monitor_value
+                )
                 and monitor_value
-                > best_det_metric + min_delta
+                > best_positive_metric
+                + min_delta
             ):
-                best_det_metric = monitor_value
+                best_positive_metric = (
+                    monitor_value
+                )
+
                 no_improvement_count = 0
 
             else:
@@ -1537,11 +1671,14 @@ def train(
                     >= patience
                 ):
                     print(
-                        "[early-stop] patience exhausted "
-                        f"for validation detection {metric_key}"
+                        "[early-stop] patience "
+                        "exhausted for "
+                        "positive-patch segmentation "
+                        f"{metric_key}"
                     )
 
                     break
+
 
     if completed_epoch <= 0:
         raise RuntimeError(
