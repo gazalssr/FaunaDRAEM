@@ -60,10 +60,10 @@ class TrainDataset(Dataset):
         save_synthetic: bool = False,
         mode: str = "both",
         p_clean: float = 0.5,
-        p_geo: float = 0.6,
+        p_geo: float = 0.5,
         p_flip: float = 0.5,
         p_photo: float = 0.3,
-        p_bg_photo: float = 0.30,
+        p_bg_photo: float = 0.0, 
         cache_silhouettes: bool = True,
     ):
         
@@ -87,8 +87,8 @@ class TrainDataset(Dataset):
             ],
             random_order=True,
         )
-        # Scaling stays independent from apply_aug.
-        self.p_scale = 0.40
+
+        self.p_scale = 0.30
         self.scale_range = (0.80, 1.20)
 
         self._aug_geo_count = 0
@@ -261,7 +261,7 @@ class TrainDataset(Dataset):
     random_order=True,
 )
 
-            # Photometric augmentation is applied only to RGB.
+
             self.photo_seq = iaa.Sequential(
                 [
                     iaa.AddToBrightness(
@@ -278,7 +278,7 @@ class TrainDataset(Dataset):
                 "[TrainDataset] augmentations DISABLED"
             )
 
-            # No augmentation objects are used in __getitem__.
+         
             self.geo_seq = None
             self.photo_seq = None
     
@@ -387,7 +387,7 @@ class TrainDataset(Dataset):
 
             return source_rgb, mask
 
-        # Cache miss: read from disk once.
+
         source_bgr = cv2.imread(
             str(silhouette_path),
             cv2.IMREAD_COLOR,
@@ -524,9 +524,7 @@ class TrainDataset(Dataset):
             group
         ]
 
-        # ---------------------------------------------------------
-        # Scaling is independent from apply_aug.
-        # ---------------------------------------------------------
+
         do_scale_shared = (
             random.random()
             < self.p_scale
@@ -738,7 +736,7 @@ class TrainDataset(Dataset):
                     ):
                         continue
 
-                    # Check the ACTUAL foreground mask, not only its bbox.
+                    
                     mask_x1 = overlap_x1 - x1
                     mask_y1 = overlap_y1 - y1
                     mask_x2 = overlap_x2 - x1
